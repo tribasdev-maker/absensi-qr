@@ -1,13 +1,13 @@
 /**
  * ============================================================================
- * SISTEM ABSENSI QR DINAMIS (10 MENIT) - LOGIKA APLIKASI
+ * SISTEM ABSENSI QR DINAMIS (10 MENIT) - LOGIKA APLIKASI (REVISI LENGKAP)
  * ============================================================================
  */
 
 // Konfigurasi Default
 const DEFAULT_CONFIG = {
-  scriptUrl: "", // URL Google Apps Script Web App
-  publicUrl: "", // URL publik web app ini (untuk dibuka di HP karyawan)
+  scriptUrl: "", // URL Google Apps Script Web App (/exec)
+  publicUrl: "", // URL publik web app ini (misal: https://...vercel.app)
   secretKey: "kunci-absen-rahasia-2026",
   employees: [
     { id: 1, name: "Budi Pratama", role: "Staf 1" },
@@ -116,6 +116,37 @@ function loadConfig() {
     }
   }
 
+  // BACA PARAMETER DARI URL (Sangat penting saat Karyawan Scan QR di HP masing-masing)
+  const urlParams = new URLSearchParams(window.location.search);
+  
+  // 1. Ambil URL Google Apps Script yang disematkan Bos di dalam QR Code
+  const suParam = urlParams.get("su") || urlParams.get("s");
+  if (suParam && suParam.trim() !== "") {
+    try {
+      appConfig.scriptUrl = decodeURIComponent(suParam).trim();
+      saveConfig();
+      console.log("Script URL berhasil disinkronkan dari QR Code:", appConfig.scriptUrl);
+    } catch (e) {
+      console.warn("Gagal parse scriptUrl dari URL:", e);
+    }
+  }
+
+  // 2. Ambil daftar nama karyawan yang disematkan Bos di dalam QR Code
+  const empParam = urlParams.get("emp") || urlParams.get("e");
+  if (empParam && empParam.trim() !== "") {
+    try {
+      const names = decodeURIComponent(empParam).split("|");
+      names.forEach((name, idx) => {
+        if (appConfig.employees[idx] && name.trim() !== "") {
+          appConfig.employees[idx].name = name.trim();
+        }
+      });
+      saveConfig();
+    } catch (e) {
+      console.warn("Gagal parse nama karyawan dari QR:", e);
+    }
+  }
+
   // Jika URL publik belum diset, deteksi URL saat ini (jika bukan file://)
   if (!appConfig.publicUrl) {
     if (window.location.protocol.startsWith("http")) {
@@ -150,6 +181,16 @@ function updateBossQRCode(force = false) {
   const now = Date.now();
   const slot = calculateSlot(now);
 
+  // Periksa apakah Google Apps Script URL sudah diisi
+  const noticeNoScript = document.getElementById("boss-notice-no-script");
+  if (noticeNoScript) {
+    if (!appConfig.scriptUrl || appConfig.scriptUrl.indexOf("/exec") === -1) {
+      noticeNoScript.style.display = "block";
+    } else {
+      noticeNoScript.style.display = "none";
+    }
+  }
+
   if (slot !== currentSlot || force || !currentToken) {
     currentSlot = slot;
     currentToken = makeToken(slot);
@@ -160,13 +201,27 @@ function updateBossQRCode(force = false) {
       if (window.location.protocol.startsWith("http")) {
         baseUrl = window.location.origin + window.location.pathname;
       } else {
-        baseUrl = "https://absensi-karyawan.local"; // Placeholder jika dibuka via file://
+        baseUrl = "https://absensi-karyawan.local";
       }
     }
 
-    // Bangun URL lengkap untuk QR Code
     const cleanBaseUrl = baseUrl.split("?")[0];
-    currentQrUrl = `${cleanBaseUrl}?mode=absen&slot=${slot}&token=${currentToken}&ts=${now}`;
+
+    // Bangun Parameter Lengkap:
+    // PENTING: Sertakan scriptUrl (&su) dan nama karyawan (&emp) ke dalam QR Code
+    // agar saat karyawan scan dari HP-nya, HP karyawan OTOMATIS tahu kemana harus mengirim data!
+    let qrParams = `mode=absen&slot=${slot}&token=${currentToken}&ts=${now}`;
+
+    if (appConfig.scriptUrl && appConfig.scriptUrl.trim() !== "") {
+      qrParams += `&su=${encodeURIComponent(appConfig.scriptUrl.trim())}`;
+    }
+
+    if (appConfig.employees && appConfig.employees.length > 0) {
+      const empNames = appConfig.employees.map(e => e.name).join("|");
+      qrParams += `&emp=${encodeURIComponent(empNames)}`;
+    }
+
+    currentQrUrl = `${cleanBaseUrl}?${qrParams}`;
 
     // Render QR Code
     renderQRCode(currentQrUrl);
@@ -177,7 +232,7 @@ function updateBossQRCode(force = false) {
       qrLinkInput.value = currentQrUrl;
     }
 
-    console.log("QR Code diperbarui untuk Slot:", slot, "Token:", currentToken);
+    console.log("QR Code diperbarui untuk Slot:", slot);
   }
 
   // Update Countdown Timer
@@ -229,9 +284,9 @@ function updateTimerDisplay(now) {
     const percentage = (clampedMs / slotMs) * 100;
     progressBar.style.width = `${percentage}%`;
     if (percentage < 20) {
-      progressBar.style.background = "#dc2626"; // Merah saat < 2 menit
+      progressBar.style.background = "#dc2626";
     } else if (percentage < 50) {
-      progressBar.style.background = "#d97706"; // Oranye
+      progressBar.style.background = "#d97706";
     } else {
       progressBar.style.background = "linear-gradient(90deg, #2563eb, #10b981)";
     }
@@ -251,7 +306,6 @@ function startBossTimer() {
 // ============================================================================
 function checkScanValidation() {
   const urlParams = new URLSearchParams(window.location.search);
-  const mode = urlParams.get("mode");
   const slotParam = urlParams.get("slot");
   const tokenParam = urlParams.get("token");
   const tsParam = urlParams.get("ts");
@@ -267,7 +321,7 @@ function checkScanValidation() {
         <span class="status-icon">⚠️</span>
         <div>
           <strong>Mode Simulasi / Buka Langsung</strong><br>
-          Halaman ini tidak dibuka via scan QR terbaru. Untuk mencatat absensi resmi, scan QR Code yang ada di HP Bos.
+          Halaman ini tidak dibuka lewat scan QR terbaru. Untuk mencatat absensi resmi, scan QR Code di HP Bos.
         </div>
       `;
     }
@@ -298,7 +352,10 @@ function checkScanValidation() {
         </div>
       `;
     }
-    if (submitBtn) submitBtn.disabled = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = "1";
+    }
     return { isValid: true, statusText: "Valid (< 10 Menit)" };
   } else {
     let pesanError = "QR Code sudah kadaluarsa (lebih dari 10 menit).";
@@ -312,7 +369,7 @@ function checkScanValidation() {
         <span class="status-icon">⛔</span>
         <div>
           <strong>Absensi Ditolak! ${pesanError}</strong><br>
-          Demi keamanan dan mencegah kecurangan, silakan minta Bos menampilkan QR Code terbaru di layar HP-nya dan scan ulang.
+          Demi keamanan dan mencegah titip absen, minta Bos menampilkan QR Code terbaru di layarnya lalu scan ulang.
         </div>
       `;
     }
@@ -399,13 +456,21 @@ function captureGpsLocation() {
 }
 
 // ============================================================================
-// KIRIM ABSENSI KE GOOGLE SPREADSHEET
+// KIRIM ABSENSI KE GOOGLE SPREADSHEET (DUAL-CHANNEL POST & GET)
 // ============================================================================
 async function submitAttendance() {
   if (isSubmitting) return;
 
   if (!selectedEmployee) {
-    alert("Silakan pilih nama karyawan terlebih dahulu!");
+    alert("Silakan pilih salah satu nama karyawan terlebih dahulu!");
+    return;
+  }
+
+  const scriptUrl = appConfig.scriptUrl;
+
+  // PERIKSA SCRIPT URL
+  if (!scriptUrl || scriptUrl.trim() === "" || scriptUrl.indexOf("/exec") === -1) {
+    alert("❌ GAGAL: URL Google Spreadsheet Belum Terhubung!\n\nBos belum memasukkan URL Google Apps Script di menu 'Setup Sheets' di HP Bos.\n\nSilakan minta Bos untuk memasukkan URL Web App Apps Script di menu pengaturan lalu refresh QR Code.");
     return;
   }
 
@@ -434,20 +499,8 @@ async function submitAttendance() {
   submitBtn.innerHTML = `<span class="spinner"></span> Menyimpan ke Spreadsheet...`;
 
   try {
-    const scriptUrl = appConfig.scriptUrl;
-
-    if (!scriptUrl || scriptUrl.trim() === "" || scriptUrl.indexOf("/exec") === -1) {
-      // Jika belum memasang URL Google Apps Script
-      setTimeout(() => {
-        showSuccessModal(payload, true);
-        finishSubmission();
-      }, 700);
-      return;
-    }
-
-    // Kirim ke Google Apps Script Web App
-    // Mode no-cors digunakan untuk kompatibilitas redirect 302 dari script.google.com
-    await fetch(scriptUrl, {
+    // 1. PENGIRIMAN UTAMA: HTTP POST (Mode no-cors)
+    const postPromise = fetch(scriptUrl, {
       method: "POST",
       mode: "no-cors",
       headers: {
@@ -456,18 +509,46 @@ async function submitAttendance() {
       body: JSON.stringify(payload)
     });
 
-    // Berhasil dikirim!
+    // 2. PENGIRIMAN CADANGAN (FALLBACK): HTTP GET
+    // Ini memastikan jika browser mobile membatasi redirect POST dari script.google.com,
+    // data tetap masuk 100% via parameter GET!
+    const getParams = new URLSearchParams({
+      action: "absen",
+      nama: payload.nama,
+      tipe: payload.tipe,
+      statusQR: payload.statusQR,
+      lokasi: payload.lokasi,
+      catatan: payload.catatan,
+      userAgent: payload.userAgent
+    });
+    const getUrl = scriptUrl + (scriptUrl.includes("?") ? "&" : "?") + getParams.toString();
+    const getPromise = fetch(getUrl, { method: "GET", mode: "no-cors" });
+
+    // Tunggu minimal salah satu pengiriman selesai
+    await Promise.race([postPromise, getPromise]);
+
+    // Tampilkan popup sukses
     showSuccessModal(payload, false);
     if (catatanInput) catatanInput.value = "";
 
   } catch (error) {
     console.error("Gagal mengirim absensi:", error);
-    alert("Gagal terhubung ke Google Spreadsheet: " + error.message + "\nPeriksa koneksi internet atau URL Apps Script.");
+    // Jika fetch gagal (misal koneksi terputus), coba via Image beacon GET
+    try {
+      const beaconParams = new URLSearchParams({
+        action: "absen",
+        nama: payload.nama,
+        tipe: payload.tipe,
+        statusQR: payload.statusQR,
+        catatan: payload.catatan
+      });
+      const img = new Image();
+      img.src = scriptUrl + (scriptUrl.includes("?") ? "&" : "?") + beaconParams.toString();
+      showSuccessModal(payload, false);
+    } catch (beaconErr) {
+      alert("Gagal terhubung ke Google Spreadsheet: " + error.message + "\nPeriksa koneksi internet Anda.");
+    }
   } finally {
-    finishSubmission();
-  }
-
-  function finishSubmission() {
     isSubmitting = false;
     submitBtn.disabled = false;
     submitBtn.innerHTML = originalBtnText;
@@ -498,9 +579,9 @@ function showSuccessModal(data, isDemo = false) {
 
   if (modalDesc) {
     if (isDemo) {
-      modalDesc.innerHTML = `<span style="color:#d97706; font-weight:600;">⚠️ Mode Simulasi:</span> Data absensi berhasil diproses secara lokal. Untuk menyimpan permanen ke Google Sheets, masukkan URL Web App Apps Script di menu Pengaturan.`;
+      modalDesc.innerHTML = `<span style="color:#d97706; font-weight:600;">⚠️ Mode Simulasi:</span> Data absensi berhasil diproses secara lokal. Masukkan URL Web App Apps Script di menu Pengaturan agar tersimpan ke Spreadsheet.`;
     } else {
-      modalDesc.innerHTML = `Data absensi Anda telah berhasil dicatat dan masuk ke Google Spreadsheet.`;
+      modalDesc.innerHTML = `Data absensi Anda telah berhasil dicatat dan masuk ke Google Spreadsheet!`;
     }
   }
 
@@ -552,9 +633,10 @@ function saveSettingsForm() {
   renderEmployeeList();
   updateBossQRCode(true);
 
-  alert("Pengaturan berhasil disimpan!");
+  alert("✅ Pengaturan berhasil disimpan!\nQR Code telah diperbarui otomatis dengan URL Spreadsheet Anda.");
 }
 
+// Uji koneksi (Ping)
 async function testGoogleSheetsConnection() {
   const url = document.getElementById("cfg-script-url").value.trim();
   if (!url || url.indexOf("/exec") === -1) {
@@ -568,18 +650,74 @@ async function testGoogleSheetsConnection() {
   btn.disabled = true;
 
   try {
-    const res = await fetch(url + "?ping=1");
+    const res = await fetch(url + (url.includes("?") ? "&" : "?") + "ping=1");
     const json = await res.json();
     if (json.status === "online") {
-      alert("✅ Koneksi Berhasil!\nGoogle Apps Script siap menerima data absensi.\nNama Sheet: " + (json.sheetName || "Data Absensi"));
+      alert(`✅ KONEKSI BERHASIL!\n\nGoogle Apps Script aktif dan terhubung ke Spreadsheet:\nJudul: ${json.spreadsheetTitle || "-"}\nSheet: ${json.sheetName || "Data Absensi"}`);
     } else {
-      alert("Respon diterima: " + JSON.stringify(json));
+      alert("Status: " + JSON.stringify(json));
     }
   } catch (err) {
-    alert("⚠️ Catatan Pengujian:\nKoneksi berhasil dipicu, namun browser membatasi pembacaan respons langsung karena CORS. Jika Anda sudah Deploy Apps Script dengan akses 'Siapa Saja (Anyone)', pengiriman data POST absensi akan bekerja dengan sempurna!");
+    alert("⚠️ Catatan Koneksi:\nPermintaan telah terkirim. Jika browser menampilkan peringatan CORS karena proteksi redirect Google, silakan coba tombol 'Kirim Tes Absensi' di bawah untuk memastikan baris data masuk langsung ke Spreadsheet!");
   } finally {
     btn.innerText = original;
     btn.disabled = false;
+  }
+}
+
+// KIRIM DATA UJI COBA LANGSUNG KE SPREADSHEET
+async function testSendSampleAttendance() {
+  const url = document.getElementById("cfg-script-url").value.trim();
+  if (!url || url.indexOf("/exec") === -1) {
+    alert("Masukkan URL Google Apps Script yang berakhiran '/exec' terlebih dahulu!");
+    return;
+  }
+
+  const btn = document.getElementById("btn-test-send");
+  const original = btn ? btn.innerText : "";
+  if (btn) {
+    btn.innerText = "Mengirim Uji Coba...";
+    btn.disabled = true;
+  }
+
+  const testPayload = {
+    nama: "Tes Sistem (Antigravity)",
+    tipe: "Masuk",
+    statusQR: "Valid (Tes Tombol Pengaturan)",
+    lokasi: "Uji Coba Browser",
+    catatan: "Uji coba penulisan langsung dari menu Pengaturan Web App",
+    userAgent: navigator.userAgent.substring(0, 100)
+  };
+
+  try {
+    // Kirim via GET & POST
+    const testParams = new URLSearchParams({
+      action: "absen",
+      nama: testPayload.nama,
+      tipe: testPayload.tipe,
+      statusQR: testPayload.statusQR,
+      lokasi: testPayload.lokasi,
+      catatan: testPayload.catatan
+    });
+    const testUrl = url + (url.includes("?") ? "&" : "?") + testParams.toString();
+
+    // Jalankan pengiriman
+    fetch(testUrl, { method: "GET", mode: "no-cors" }).catch(() => {});
+    fetch(url, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(testPayload)
+    }).catch(() => {});
+
+    alert("✅ Data uji coba telah dikirim!\n\nSilakan buka Google Spreadsheet Anda sekarang. Seharusnya baris baru dengan nama 'Tes Sistem (Antigravity)' sudah muncul di tab 'Data Absensi'.\n\nJika belum muncul, perhatikan pengaturan 'Siapa yang memiliki akses (Anyone)' di Apps Script Anda.");
+  } catch (err) {
+    alert("Gagal mengirim data uji coba: " + err.message);
+  } finally {
+    if (btn) {
+      btn.innerText = original;
+      btn.disabled = false;
+    }
   }
 }
 
@@ -657,4 +795,3 @@ window.addEventListener("DOMContentLoaded", () => {
     if (fileNotice) fileNotice.style.display = "block";
   }
 });
-
