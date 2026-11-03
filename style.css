@@ -458,11 +458,11 @@ body {
   background: var(--primary);
 }
 
-/* Attendance Type Buttons (Masuk / Pulang) */
+/* Attendance Type Buttons (Masuk / Pulang / Izin / Masuk Setelah Izin) */
 .type-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .type-btn {
@@ -486,6 +486,7 @@ body {
   font-weight: 700;
   color: var(--gray-700);
   display: block;
+  line-height: 1.25;
 }
 
 .type-btn.selected-masuk {
@@ -505,6 +506,12 @@ body {
   background: var(--warning-light);
 }
 .type-btn.selected-izin .type-title { color: #b45309; }
+
+.type-btn.selected-kembali {
+  border-color: #0284c7;
+  background: #e0f2fe;
+}
+.type-btn.selected-kembali .type-title { color: #0369a1; }
 
 /* Status Validation Banner */
 .status-banner {

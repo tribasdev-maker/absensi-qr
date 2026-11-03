@@ -417,12 +417,21 @@ function selectEmployee(emp) {
 function selectType(type) {
   selectedType = type;
   document.querySelectorAll(".type-btn").forEach(btn => {
-    btn.classList.remove("selected-masuk", "selected-pulang", "selected-izin");
+    btn.classList.remove("selected-masuk", "selected-pulang", "selected-izin", "selected-kembali");
   });
 
-  const activeBtn = document.getElementById(`type-btn-${type.toLowerCase()}`);
-  if (activeBtn) {
-    activeBtn.classList.add(`selected-${type.toLowerCase()}`);
+  if (type === "Masuk") {
+    const btn = document.getElementById("type-btn-masuk");
+    if (btn) btn.classList.add("selected-masuk");
+  } else if (type === "Pulang" || type === "Keluar") {
+    const btn = document.getElementById("type-btn-pulang");
+    if (btn) btn.classList.add("selected-pulang");
+  } else if (type === "Izin") {
+    const btn = document.getElementById("type-btn-izin");
+    if (btn) btn.classList.add("selected-izin");
+  } else if (type === "Masuk Setelah Izin") {
+    const btn = document.getElementById("type-btn-kembali");
+    if (btn) btn.classList.add("selected-kembali");
   }
 }
 
